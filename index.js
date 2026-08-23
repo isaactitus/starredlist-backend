@@ -3,6 +3,7 @@ const cors = require("cors");
 require("dotenv").config();
 const newsRoutes = require("./routes/news");
 const app = express();
+app.set('trust proxy', 1);
 app.use(cors({
   origin: ["https://starredlist.vercel.app", "http://localhost:3000"],
   methods: ["GET", "POST"],
