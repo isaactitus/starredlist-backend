@@ -1,79 +1,75 @@
-const express = require("express");
-const cors = require("cors");
-const rateLimit = require("express-rate-limit");
-const admin = require("firebase-admin");
-require("dotenv").config();
-const newsRoutes = require("./routes/news");
+import express from 'express';
+import cors from 'cors';
+import admin from 'firebase-admin';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
 const app = express();
-app.set('trust proxy', 1);
 
-// Initialize Firebase Admin using the service account stored in env vars
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
-
-app.use(cors({
-  origin: ["https://starredlist.vercel.app", "http://localhost:3000"],
-  methods: ["GET", "POST"],
-}));
+// Enable CORS for your Vercel frontend
+app.use(cors({ origin: true }));
 app.use(express.json());
 
-// Middleware: only allow requests from signed-in users
-async function verifyAuth(req, res, next) {
-  const authHeader = req.headers.authorization || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
-
-  if (!token) {
-    return res.status(401).json({ error: "Sign in required to use this feature." });
-  }
-
-  try {
-    const decoded = await admin.auth().verifyIdToken(token);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    return res.status(401).json({ error: "Invalid or expired sign-in. Please sign in again." });
-  }
+// Initialize Firebase Admin for server-side token verification
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      // Replace escaped newlines in environment variable
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    }),
+  });
 }
 
-app.use("/api/news", verifyAuth, newsRoutes);
+// Initialize Google Gemini Client
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-const chatLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 25,
-  message: { error: "Too many requests, please slow down and try again shortly." },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Middleware: Authenticate requests via Firebase ID Token
+const authenticateUser = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-app.get("/", (req, res) => {
-  res.json({ status: "StaredList backend is running!" });
-});
-app.post("/api/chat", verifyAuth, chatLimiter, async (req, res) => {
-  try {
-    const { messages, systemPrompt, max_tokens } = req.body;
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${GROQ_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-oss-120b",
-        messages: [
-          { role: "system", content: systemPrompt || "You are LIBI, a helpful assistant." },
-          ...messages
-        ],
-        max_tokens: max_tokens || 1024,
-      }),
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ 
+      error: 'SIGN_IN_REQUIRED', 
+      message: 'Sign in required to use this feature.' 
     });
-    const data = await response.json();
-    res.json(data);
+  }
+
+  const idToken = authHeader.split('Bearer ')[1];
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    req.user = decodedToken;
+    next();
+  } catch (error) {
+    console.error('Auth Verification Error:', error.message);
+    return res.status(401).json({ 
+      error: 'SIGN_IN_REQUIRED', 
+      message: 'Sign in required to use this feature.' 
+    });
+  }
+};
+
+// Protected Chat Route
+app.post('/chat', authenticateUser, async (req, res) => {
+  try {
+    const { prompt } = req.body;
+
+    if (!prompt || typeof prompt !== 'string') {
+      return res.status(400).json({ error: 'Prompt is required.' });
+    }
+
+    // Call Gemini Model
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+
+    return res.status(200).json({ reply: responseText });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Gemini API Error:', err);
+    return res.status(500).json({ error: 'Failed to process AI request.' });
   }
 });
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`Backend running on port ${PORT}`));
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
