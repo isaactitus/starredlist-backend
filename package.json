@@ -1,23 +1,18 @@
 {
   "name": "starredlist-backend",
   "version": "1.0.0",
-  "description": "",
+  "description": "Backend API for StarredList and LIBI AI",
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "@google/genai": "^0.1.1",
+    "@google/generative-ai": "^0.21.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^7.4.0",
-    "firebase-admin": "^12.5.0",
-    "node-fetch": "^3.3.2"
+    "firebase-admin": "^12.5.0"
   }
 }
