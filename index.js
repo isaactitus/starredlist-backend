@@ -5,17 +5,15 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const app = express();
 
-// Enable CORS for your Vercel frontend
 app.use(cors({ origin: true }));
 app.use(express.json());
 
-// Initialize Firebase Admin for server-side token verification
+// Initialize Firebase Admin SDK
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      // Replace escaped newlines in environment variable
       privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
     }),
   });
@@ -24,7 +22,7 @@ if (!admin.apps.length) {
 // Initialize Google Gemini Client
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Middleware: Authenticate requests via Firebase ID Token
+// Authentication Middleware
 const authenticateUser = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
@@ -59,7 +57,6 @@ app.post('/chat', authenticateUser, async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required.' });
     }
 
-    // Call Gemini Model
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
